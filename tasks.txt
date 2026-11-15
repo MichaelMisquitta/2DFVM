@@ -1,0 +1,9 @@
+DONE; Take triangulation and make list of unique sides
+
+DONE; Assign two triangles to each side and have it sorted from low to high index
+
+DONE; Calculate normal vector for each side per cell - negative of each other
+
+Create unique index for each boundary and store index for each side after cells
+
+Look into how to use typing to check parameter types - use Mypy?
