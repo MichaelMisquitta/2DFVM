@@ -4,6 +4,18 @@ DONE; Assign two triangles to each side and have it sorted from low to high inde
 
 DONE; Calculate normal vector for each side per cell - negative of each other
 
-Create unique index for each boundary and store index for each side after cells
+DONE;Create unique index for each boundary and store index for each side after cells
+
+DONE;Calculate and store area of each side
+
+store boundary sides in separate array so that we are not constantly
+checking for each side if it is a boundary side or not
+
+build boundary condition array using Triangle data since it outputs it for each passed in 
+segment in the PSLG.
+
+Possibly use Triangles sides because it also calculates them, but my code seems to work
+
+Triangle documentation not very good on that website, Claude referenced some other packages that use Triangle and use those hidden parameters so might need to dig around for that info
 
 Look into how to use typing to check parameter types - use Mypy?
