@@ -14,7 +14,7 @@ def main():
 
     pts=np.array(((0, 0), (1, 0), (1, 1), (0, 1)))
     seg = [[0,1],[1,2],[2,3],[3,0]]
-    markers = np.array([1,2,3,4])
+    markers = np.array([1,2,3,4])  # bottom, right, top, left
     A = dict(vertices=pts, segments=seg,segment_markers=markers)
     
     #pass p to input string to triangulate a planar straight line graph which will tallow segment_markers
@@ -22,7 +22,7 @@ def main():
     #tr.compare(plt, A, B)  #broken function in triangle, don't use
     vertices = B["vertices"]
     triangles= B["triangles"]
-    boundary_segments = np.sort(B["segments"],axis=1) #sort to get same segments as those in sides
+    boundary_segments = np.sort(B["segments"],axis=1) #sort to get same segments as those in faces
     
     boundary_markers = B["segment_markers"]
     #testz = [[1 ,1, 1], [2, 2, 2]]
@@ -31,86 +31,152 @@ def main():
     plt.show()
     
     #Triangles list is list of each cell
-    #Make a list of all unique sides from the triangles list
-    #sides will be stored as 2 pts in increasing index order
-    #loop through all triangles and form sides to add to list
-    #Each time side is added eg 2 pts are added, in 
-    #array for cells per side, add cell index then after all cells have 
+    #Make a list of all unique faces from the triangles list
+    #faces will be stored as 2 pts in increasing index order
+    #loop through all triangles and form faces to add to list
+    #Each time face is added eg 2 pts are added, in 
+    #array for cells per face, add cell index then after all cells have 
     #been run through, sort the cell indices from low to high
     
-    #2 data structures for sides,
-        #first is pts that make side, sorted
-        #second is cells that border side, sorted
-    sides = []
-    side_cells = []
+    #2 data structures for faces,
+        #first is pts that make face, sorted
+        #second is cells that border face, sorted
+    faces = []
+    boundary_faces = boundary_segments.tolist()
+    face_cells = []
+    face_distances = []
     cell_centers = []
-    side_normals = []
-    side_area = []
+    face_centers = []
+    face_normals = []
+    face_area = []
     
-    calc_sides_connectivity(sides,side_cells,triangles)
+    calc_faces_connectivity(faces,face_cells,triangles)
     calc_cell_centers(cell_centers,vertices,triangles)
     
     cell_centers = np.array(cell_centers)
     
     #maybe change to not take in np array
-    calc_side_normals(side_normals,side_area,sides,side_cells,cell_centers,vertices)
+    calc_face_normals_area(face_normals,face_area,faces,face_cells,cell_centers,vertices)
+    calc_face_centers(faces,vertices,face_centers)
+    calc_face_distances(face_cells,face_centers,cell_centers,face_distances)
     
     
-    sides = np.array(sides)
-    side_cells = np.array(side_cells)
-    #set boundary condition array for boundary sides
+    face_cells = np.array(face_cells)
+    #set boundary condition array for boundary faces
     
-    num_sides = sides.shape[0]
-    boundary_index = np.zeros([num_sides,1])  #0 is interior, 1 is left, 2 is right, 3 is bottom, 4 is top
-    set_boundary_index(boundary_index,sides,boundary_segments)
-    #I should make boundary index list based off of index in the side array and 
-    #the value from segments that Triangle gives. I should also move boundary sides 
+    num_faces = len(faces)
+    boundary_index = np.zeros([num_faces,1])  #0 is interior, 1 is left, 2 is right, 3 is bottom, 4 is top
+    set_boundary_index(boundary_index,faces,boundary_segments,boundary_markers)
+    #I should make boundary index list based off of index in the face array and 
+    #the value from segments that Triangle gives. I should also move boundary faces 
     #to separate array to iterate over so I dont need to go through all of them and constantly
     #check if its a boundary condition or not
     
     #convert to np arrays for efficiency, or maybe start with np arrays instead of lists
-    sides = np.array(sides)
+    faces = np.array(faces)
 
     
     num_cells = triangles.shape[0]
     print("Done Building Connectivity")
     
     #Data structures for flow variables
-    u = np.array([num_cells,1])
-    v = np.array([num_cells,1])
-    p = np.array([num_cells,1])      
+    u = np.zeros([num_cells])
+    v = np.zeros([num_cells,1])
+    p = np.zeros([num_cells,1])  
     
-def calc_sides_connectivity(sides,side_cells,triangles):
+    #boundary conditions
+    bc = [0,1000,0,1] # 1000 pa exit and 1m/s entrance
+    
+    #SIMPLE
+    solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u,num_cells)
+    
+
+    
+  
+
+def solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,velocity,num_cells):
+    momentum_u = np.zeros([num_cells,num_cells])
+    for face_ind,cells in enumerate(face_cells):
+        if boundary_index[face_ind] == 0:
+            for cell in cells:
+                cell_A = cells[0]
+                cell_B = cells[1]
+                #calculate fluxes
+                #approximate velocity at face using distance weighed average from the cell centers
+                dist_A = face_distances[face_ind][0]
+                dist_B = face_distances[face_ind][1]
+                A_normal = face_normals[face_ind][0][0]
+                B_normal = face_normals[face_ind][1][0]
+                #get component that goes in cell A and cell B
+                area = face_area[face_ind]
+                #avg_velocity = (velocity[cell_A]*dist_A+velocity[cell_B]*dist_B)/(dist_A+dist_B)
+                A_comp = area*(velocity[cell_A]*dist_A/(dist_A+dist_B))
+                B_comp = area*(velocity[cell_B]*dist_B/(dist_A+dist_B))
+                val = (A_comp*A_normal)
+                momentum_u[cell_A,cell_A] += A_comp*A_normal
+                momentum_u[cell_A,cell_B] += B_comp*A_normal
+                momentum_u[cell_B,cell_B] += B_comp*B_normal
+                momentum_u[cell_B,cell_A] += A_comp*B_normal
+        else:
+            #boundary cell
+            i = 1
+    return
+            
+            
+def calc_face_centers(faces,vertices,face_centers):
+    for face in faces:
+        pt_a = face[0]
+        pt_b = face[1]
+        a_coords = vertices[pt_a]
+        b_coords = vertices[pt_b]  #indexing with one value slices row as 1D array
+        face_x = (a_coords[0]+b_coords[0])/2
+        face_y = (a_coords[1]+b_coords[1])/2
+        face_centers.append([face_x,face_y])
+    return
+
+def calc_face_distances(face_cells,face_centers,cell_centers,face_distances):
+    for face_ind,cells in enumerate(face_cells):
+        face_distance_row = []
+        for cell in cells:
+            face_pt = face_centers[face_ind]
+            cell_pt = cell_centers[cell]
+            distance = math.sqrt((face_pt[0]-cell_pt[0] )**2 + (face_pt[1]-cell_pt[1] )**2)
+            face_distance_row.append(distance)
+        face_distances.append(face_distance_row)
+        
+    return
+
+def calc_faces_connectivity(faces,face_cells,triangles):
     for ind,cell in enumerate(triangles):
-        tri_sides = calc_sides(cell)
-        for side in tri_sides:
+        tri_faces = calc_faces(cell)
+        for face in tri_faces:
             try:
-                found_index = sides.index(side)
+                found_index = faces.index(face)
             except ValueError:
                 found_index = -1
             if found_index == -1:
-                sides.append(side)
-                side_cells.append([ind])
+                faces.append(face)
+                face_cells.append([ind])
             else:
-                side_cells[found_index].append(ind)
+                face_cells[found_index].append(ind)
     #Dont need to sort because code iterates over cells in order but have it anyways
-    #side_cells = [sorted(row) for row in side_cells]
+    #face_cells = [sorted(row) for row in face_cells]
     #fill 2nd position of border cells with -1 so list can be converted to numpy array
-    for ind,row in enumerate(side_cells):
+    for ind,row in enumerate(face_cells):
         
         if len(row) == 1:
-            side_cells[ind].append(-1)
+            face_cells[ind].append(-1)
     
     return
                 
-def calc_sides(triangle):
+def calc_faces(triangle):
     #pts are sorted from low to high
     triangle = sorted(triangle)
-    side_a = [triangle[0],triangle[1]]
-    side_b = [triangle[0],triangle[2]]
-    side_c = [triangle[1],triangle[2]]
-    sides = [side_a,side_b,side_c]
-    return(sides)
+    face_a = [triangle[0],triangle[1]]
+    face_b = [triangle[0],triangle[2]]
+    face_c = [triangle[1],triangle[2]]
+    faces = [face_a,face_b,face_c]
+    return(faces)
 
 def calc_cell_centers(cell_centers,vertices,triangles):
     for cell_ind,cell in enumerate(triangles):
@@ -120,40 +186,41 @@ def calc_cell_centers(cell_centers,vertices,triangles):
             center = calc_center(np.array(tri_pts))
             cell_centers.append(center)
 
-def calc_side_normals(side_normals,side_area,sides,side_cells,cell_centers: npt.NDArray[np.dtype],vertices):
-    for side_ind,side in enumerate(sides):
-        pt_a = vertices[side[0],:]
-        pt_b = vertices[side[1],:]
+def calc_face_normals_area(face_normals,face_area,faces,face_cells,cell_centers: npt.NDArray[np.dtype],vertices):
+    for face_ind,face in enumerate(faces):
+        pt_a = vertices[face[0],:]
+        pt_b = vertices[face[1],:]
         dx = pt_a[0]-pt_b[0]
         dy = pt_a[1]-pt_b[1]
         magnitude = np.sqrt(dx**2+dy**2)
-        #store side area
+        #store face area
         area = magnitude
         
-        #works if we go through sides in order from 0 -> n
-        side_area.append(area)
+        #works if we go through faces in order from 0 -> n
+        face_area.append(area)
         
         guess_normal = np.array([dy/magnitude,-dx/magnitude])
         
-        #get cell_center value for first cell in side_cells at specific index
-        first_cell_center = cell_centers[side_cells[side_ind][0]]
+        #get cell_center value for first cell in face_cells at specific index
+        first_cell_center = cell_centers[face_cells[face_ind][0]]
         check_line = first_cell_center-pt_a
    
         angle = calc_angle(guess_normal,check_line)
         if abs(angle) < 90:
             #normal direction is correct for first cell
-            side_normals.append([guess_normal,-guess_normal])
+            face_normals.append([guess_normal,-guess_normal])
         else:
-            side_normals.append([-guess_normal,guess_normal])
+            face_normals.append([-guess_normal,guess_normal])
             
-def set_boundary_index(boundary_index,sides,boundary_segments,boundary_markers):
+def set_boundary_index(boundary_index,faces,boundary_segments,boundary_markers):
     boundary_segments_list = boundary_segments.tolist()
-    #compare given segments to sides because fewer comparisons and I know each one is in there, rest can be set to 0 as default
-    for ind,side in enumerate(boundary_segments_list):
-        idx = boundary_segments_list.index(side)
-        boundary_value = boundary_markers[idx]
-        boundary_index
-        
+    #compare given segments to faces because fewer comparisons and I know each one is in there, rest can be set to 0 as default
+    for ind,face in enumerate(boundary_segments_list):
+        idx = faces.index(face)
+        boundary_value = boundary_markers[ind]
+        boundary_index[idx] = boundary_value
+    
+    return
             
     
 def calc_angle(line_a,line_b):
