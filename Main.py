@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from typing import Literal
 import numpy.typing as npt
 import math
+from scipy.sparse.linalg import spsolve
 
 #vertices = np.array(((0,0),(1,0),(1,1),(0,1)))
 #A = dict(vertices)
@@ -14,11 +15,11 @@ def main():
 
     pts=np.array(((0, 0), (1, 0), (1, 1), (0, 1)))
     seg = [[0,1],[1,2],[2,3],[3,0]]
-    markers = np.array([1,2,3,4])  # bottom, right, top, left
+    markers = np.array([0,1,2,3])  # bottom, right, top, left
     A = dict(vertices=pts, segments=seg,segment_markers=markers)
     
     #pass p to input string to triangulate a planar straight line graph which will tallow segment_markers
-    B = tr.triangulate(A,'pqa0.1e')  #qa0.01    0.01 is the max area of the triangle
+    B = tr.triangulate(A,'pqa0.05e')  #qa0.01    0.01 is the max area of the triangle
     #tr.compare(plt, A, B)  #broken function in triangle, don't use
     vertices = B["vertices"]
     triangles= B["triangles"]
@@ -28,7 +29,7 @@ def main():
     #testz = [[1 ,1, 1], [2, 2, 2]]
     
     plt.triplot(B["vertices"][:,0],B["vertices"][:,1],triangles)
-    plt.show()
+    
     
     #Triangles list is list of each cell
     #Make a list of all unique faces from the triangles list
@@ -54,6 +55,11 @@ def main():
     calc_cell_centers(cell_centers,vertices,triangles)
     
     cell_centers = np.array(cell_centers)
+ 
+    #fig,ax = plt.subplots()
+    for cell_ind,coords in enumerate(cell_centers):
+        plt.text(coords[0],coords[1],str(cell_ind),ha="center",va="center",color="red",fontsize=10)
+    plt.show()
     
     #maybe change to not take in np array
     calc_face_normals_area(face_normals,face_area,faces,face_cells,cell_centers,vertices)
@@ -79,24 +85,34 @@ def main():
     num_cells = triangles.shape[0]
     print("Done Building Connectivity")
     
-    #Data structures for flow variables
-    u = np.zeros([num_cells])
-    v = np.zeros([num_cells,1])
-    p = np.zeros([num_cells,1])  
-    
     #boundary conditions
-    bc = [0,1000,0,1] # 1000 pa exit and 1m/s entrance
+    bc = [0,1,0,1] # 1000 pa exit and 1m/s entrance
+    
+    
+    u = np.ones([num_cells])
+    v = np.zeros([num_cells])
+    p = np.zeros([num_cells])  
+    
+    #initialize starting values
+    p += bc[1] #in place modification of p
+    u -= 0.5
+
     
     #SIMPLE
-    solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u,num_cells)
+    u_new = solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u,v,p,num_cells,bc)
+    print("done")
     
-
     
   
-
-def solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,velocity,num_cells):
+#this function should work for both u and v momentum since everything is same except unknown velocity
+#currently set up for vetical inlet and outlet, need to change contribution to source for angled inlet/outlet
+def solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u_old,v_old,p_old,num_cells,bc):
+    
     momentum_u = np.zeros([num_cells,num_cells])
+    source_u = np.zeros([num_cells])
+    #print(face_cells)
     for face_ind,cells in enumerate(face_cells):
+        #print(cells)
         if boundary_index[face_ind] == 0:
             for cell in cells:
                 cell_A = cells[0]
@@ -110,16 +126,51 @@ def solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_
                 #get component that goes in cell A and cell B
                 area = face_area[face_ind]
                 #avg_velocity = (velocity[cell_A]*dist_A+velocity[cell_B]*dist_B)/(dist_A+dist_B)
-                A_comp = area*(velocity[cell_A]*dist_A/(dist_A+dist_B))
-                B_comp = area*(velocity[cell_B]*dist_B/(dist_A+dist_B))
-                val = (A_comp*A_normal)
-                momentum_u[cell_A,cell_A] += A_comp*A_normal
-                momentum_u[cell_A,cell_B] += B_comp*A_normal
-                momentum_u[cell_B,cell_B] += B_comp*B_normal
-                momentum_u[cell_B,cell_A] += A_comp*B_normal
-        else:
-            #boundary cell
-            i = 1
+                
+                #rho*u*u term
+                A_comp_u = area*(u_old[cell_A]*dist_A/(dist_A+dist_B))
+                B_comp_u = area*(u_old[cell_B]*dist_B/(dist_A+dist_B))
+                
+                #rho*v*u term
+                A_comp_v = area*(v_old[cell_A]*dist_A/(dist_A+dist_B))
+                B_comp_v = area*(v_old[cell_B]*dist_B/(dist_A+dist_B))
+                
+                #can be cleaned up to combine lines
+                
+                #pressure terms added to source
+                #pressure_term = -(p_old[cell_A]*dist_A + p_old[cell_B]*dist_B)/(dist_A+dist_B)*area*normal
+                
+                source_u[cell_A] += -p_old[cell_A]*dist_A/(dist_A+dist_B)*area*A_normal
+                source_u[cell_B] += -p_old[cell_B]*dist_B/(dist_A+dist_B)*area*B_normal
+                
+                momentum_u[cell_A,cell_A] += (A_comp_u+A_comp_v)*A_normal
+                momentum_u[cell_A,cell_B] += (B_comp_u+B_comp_v)*A_normal
+                momentum_u[cell_B,cell_B] += (B_comp_u+B_comp_v)*B_normal
+                momentum_u[cell_B,cell_A] += (A_comp_u+A_comp_v)*B_normal
+        else:  #boundary cell
+            cell_A = cells[0]
+            A_normal = face_normals[face_ind][0][0]
+            match boundary_index[face_ind]:
+                case 0: #wall
+                    pass #0 flux so nothing to add to matrix
+                case 1: #outlet
+                    #normal gradient of velocity is 0 so v at wall is same as center, ish 
+                    #flux = area*velocity[cell_A]
+                    momentum_u[cell_A,cell_A] += area*u_old[cell_A]*A_normal
+                    
+                case 2: #wall
+                    pass #0 flux
+                    
+                case 3: #inlet
+                    #flux added to source vector
+                    source_u[cell_A] = -bc[3]*A_normal  #goes in negative because on opposite side of = sign
+
+    #calculate u_new
+    u_new = spsolve(momentum_u,source_u)
+    return u_new
+                    
+            
+            
     return
             
             
