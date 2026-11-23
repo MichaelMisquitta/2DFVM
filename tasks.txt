@@ -3,9 +3,11 @@ checking for each side if it is a boundary side or not
 
 
 
-set up function for running SIMPLE or PISO algorithm
--
 
+-
+NOTES
+
+Coefficient matrix will become non-invertible if triangulation is perfectly symmetric such that two triangles only see contributions from the same boundary triangles, eg in a square split into 4 triangles, the top and bottom triangle will see the same fluxes from the 2 side triangles if all are initialized to the same starting velocity, which causes the 2 rows of the coefficient matrix to be the same and thus the matrix is non-invertible 
 
 Possibly use Triangles sides because it also calculates them, but my code seems to work
 
