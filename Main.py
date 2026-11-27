@@ -122,7 +122,14 @@ def pressure_correction(a_matrix,num_cells,face_cells):
             
                 area = face_area[face_ind]
                 
-                a = a_diag[face_ind]
+                a_A = a_diag[cell_A]
+                a_B = a_diag[cell_B]
+                
+                pressure_matrix[cell_A,cell_A] += area/(a_A)*area
+                pressure_matrix[cell_A,cell_B] += -area/(a_B)*area
+                
+                pressure_matrix[cell_B,cell_B] += area/(a_B)*area
+                pressure_matrix[cell_B,cell_A] += -area/(a_A)*area
                 
             
         else:
