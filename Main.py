@@ -99,17 +99,44 @@ def main():
 
     
     #SIMPLE
-    u_new = solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u,v,p,num_cells,bc)
+    #velocity guess
+    u_new,a_matrix = solve_momentum(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u,v,p,num_cells,bc,0)
+    v_new,a_matrix = solve_momentum(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u,v,p,num_cells,bc,1)
+    
+    #solve pressure correction equation
+    p_new = pressure_correction(a_matrix,face_cells)
+    #adjust pressures and velocity using calculated pressure adjustment
     print("done")
     
     
-  
+
+def pressure_correction(a_matrix,num_cells,face_cells):
+    a_diag = np.diagonal(a_matrix)
+    b = np.zeros([num_cells])
+    pressure_matrix = np.zeros([num_cells,num_cells])
+    for face_ind,cells in enumerate(face_cells):
+        if boundary_index[face_ind] == 0:
+            for cell in cells:
+                cell_A = cells[0]
+                cell_B = cells[1]
+            
+                area = face_area[face_ind]
+                
+                a = a_diag[face_ind]
+                
+            
+        else:
+            
+        
+        print()
+    
+
 #this function should work for both u and v momentum since everything is same except unknown velocity
 #currently set up for vetical inlet and outlet, need to change contribution to source for angled inlet/outlet
-def solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u_old,v_old,p_old,num_cells,bc):
+def solve_momentum(face_cells,boundary_index,cell_centers,face_distances,face_area,face_normals,u_old,v_old,p_old,num_cells,bc,norm_ind):
     
-    momentum_u = np.zeros([num_cells,num_cells])
-    source_u = np.zeros([num_cells])
+    momentum = np.zeros([num_cells,num_cells])
+    source = np.zeros([num_cells])
     #print(face_cells)
     for face_ind,cells in enumerate(face_cells):
         #print(cells)
@@ -121,8 +148,8 @@ def solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_
                 #approximate velocity at face using distance weighed average from the cell centers
                 dist_A = face_distances[face_ind][0]
                 dist_B = face_distances[face_ind][1]
-                A_normal = face_normals[face_ind][0][0]
-                B_normal = face_normals[face_ind][1][0]
+                A_normal = face_normals[face_ind][0][norm_ind] #component of normal that is being used
+                B_normal = face_normals[face_ind][1][norm_ind]
                 #get component that goes in cell A and cell B
                 area = face_area[face_ind]
                 #avg_velocity = (velocity[cell_A]*dist_A+velocity[cell_B]*dist_B)/(dist_A+dist_B)
@@ -140,13 +167,13 @@ def solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_
                 #pressure terms added to source
                 #pressure_term = -(p_old[cell_A]*dist_A + p_old[cell_B]*dist_B)/(dist_A+dist_B)*area*normal
                 
-                source_u[cell_A] += -p_old[cell_A]*dist_A/(dist_A+dist_B)*area*A_normal
-                source_u[cell_B] += -p_old[cell_B]*dist_B/(dist_A+dist_B)*area*B_normal
+                source[cell_A] += -p_old[cell_A]*dist_A/(dist_A+dist_B)*area*A_normal
+                source[cell_B] += -p_old[cell_B]*dist_B/(dist_A+dist_B)*area*B_normal
                 
-                momentum_u[cell_A,cell_A] += (A_comp_u+A_comp_v)*A_normal
-                momentum_u[cell_A,cell_B] += (B_comp_u+B_comp_v)*A_normal
-                momentum_u[cell_B,cell_B] += (B_comp_u+B_comp_v)*B_normal
-                momentum_u[cell_B,cell_A] += (A_comp_u+A_comp_v)*B_normal
+                momentum[cell_A,cell_A] += (A_comp_u+A_comp_v)*A_normal
+                momentum[cell_A,cell_B] += (B_comp_u+B_comp_v)*A_normal
+                momentum[cell_B,cell_B] += (B_comp_u+B_comp_v)*B_normal
+                momentum[cell_B,cell_A] += (A_comp_u+A_comp_v)*B_normal
         else:  #boundary cell
             cell_A = cells[0]
             A_normal = face_normals[face_ind][0][0]
@@ -156,18 +183,18 @@ def solve_momentum_u(face_cells,boundary_index,cell_centers,face_distances,face_
                 case 1: #outlet
                     #normal gradient of velocity is 0 so v at wall is same as center, ish 
                     #flux = area*velocity[cell_A]
-                    momentum_u[cell_A,cell_A] += area*u_old[cell_A]*A_normal
+                    momentum[cell_A,cell_A] += area*u_old[cell_A]*A_normal
                     
                 case 2: #wall
                     pass #0 flux
                     
                 case 3: #inlet
                     #flux added to source vector
-                    source_u[cell_A] = -bc[3]*A_normal  #goes in negative because on opposite side of = sign
+                    source[cell_A] = -bc[3]*A_normal  #goes in negative because on opposite side of = sign
 
     #calculate u_new
-    u_new = spsolve(momentum_u,source_u)
-    return u_new
+    u_new = spsolve(momentum,source)
+    return u_new,momentum
                     
             
             
